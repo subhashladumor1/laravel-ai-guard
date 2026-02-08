@@ -3,7 +3,7 @@
   "description": "Laravel AI Guard 🛡️ — AI cost & budget control for Laravel AI SDK. Track token usage, control OpenAI & LLM spending, enforce AI budgets, and prevent unexpected billing spikes.",
   "type": "library",
   "license": "MIT",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "keywords": [
     "laravel",
     "laravel-ai",
