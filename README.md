@@ -295,6 +295,13 @@ $response = (new YourAgent)->prompt($userPrompt);
 AIGuard::recordFromResponse($response, userId: auth()->id(), tenantId: $tenantId, tag: 'chat');
 ```
 
+**Multi-model:** Pass `model` and `provider` so estimate and budgets use the right cost:
+
+```php
+$estimate = AIGuard::estimate($userPrompt, model: 'gpt-4o-mini', provider: 'openai');
+AIGuard::recordFromResponse($response, userId: auth()->id(), provider: 'openai', model: 'gpt-4o-mini');
+```
+
 **Streaming:** record in `->then()` callback when stream finishes.
 
 ---
@@ -316,6 +323,92 @@ AIGuard::recordAndApplyBudget([
     'tag' => 'chat',
 ]);
 ```
+
+---
+
+### Multi-model and dynamic cost (no config change)
+
+Cost is resolved in order: **per-call override** → **runtime pricing** → **config**. So you can support many models and change costs at runtime without editing `config/ai-guard.php`.
+
+**1. Per-call pricing override** — pass pricing for a single estimate or record:
+
+```php
+// Estimate with custom cost per 1k tokens (no config entry needed)
+$estimate = AIGuard::estimate($userPrompt, 'my-model', 'my-provider', [
+    'input' => 0.001,
+    'output' => 0.002,
+]);
+
+// Record with custom pricing when cost isn't pre-calculated
+AIGuard::recordFromResponse($response, auth()->id(), $tenantId, 'openai', 'gpt-4o', 'chat', [
+    'input' => 0.0025,
+    'output' => 0.01,
+]);
+
+// record() can omit 'cost' and use 'pricing' to calculate
+AIGuard::record([
+    'provider' => 'openai',
+    'model' => 'gpt-4o',
+    'input_tokens' => 400,
+    'output_tokens' => 250,
+    'pricing' => ['input' => 0.0025, 'output' => 0.01],
+    'user_id' => auth()->id(),
+]);
+```
+
+**2. Runtime pricing registry** — register models once (e.g. in a service provider or from DB); then `estimate()` and recording use them automatically:
+
+```php
+$calc = AIGuard::getCostCalculator();
+
+// Single model
+$calc->setPricing('openai', 'gpt-4o-mini', ['input' => 0.00015, 'output' => 0.0006]);
+
+// Many models at once
+$calc->setPricingMap([
+    'openai' => [
+        'gpt-4o' => ['input' => 0.0025, 'output' => 0.01],
+        'gpt-4o-mini' => ['input' => 0.00015, 'output' => 0.0006],
+    ],
+    'anthropic' => [
+        'claude-3-5-sonnet' => ['input' => 0.003, 'output' => 0.015],
+    ],
+]);
+
+// Now estimate/record use these models without config
+$estimate = AIGuard::estimate($userPrompt, 'gpt-4o-mini', 'openai');
+AIGuard::checkAllBudgets(auth()->id(), $tenantId);
+```
+
+**Add, update or remove models at runtime:**
+
+```php
+$calc = AIGuard::getCostCalculator();
+
+// Add or update a model
+$calc->setPricing('openai', 'gpt-4o', ['input' => 0.0025, 'output' => 0.01]);
+
+// Remove a model from runtime (falls back to config, or 0 if not in config)
+$calc->removePricing('openai', 'gpt-4o');
+
+// Clear all runtime pricing
+$calc->clearRuntimePricing();
+```
+
+**Config file** — publish and edit `config/ai-guard.php` to add, remove or update models permanently:
+
+```php
+'pricing' => [
+    'openai' => [
+        'gpt-4o' => ['input' => 0.0025, 'output' => 0.01],
+        'gpt-4o-mini' => ['input' => 0.00015, 'output' => 0.0006],
+        // Add new models here
+    ],
+    // Add new providers here
+],
+```
+
+Budget checks use the same cost you record (per user/tenant), so multi-model costs and budgets work together.
 
 ---
 

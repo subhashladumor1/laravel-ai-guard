@@ -28,12 +28,20 @@ class GuardManager
 
     public function record(array $data): AiUsage
     {
+        $provider = $data['provider'] ?? config('ai-guard.default_provider', 'openai');
+        $model = $data['model'] ?? config('ai-guard.default_model', 'gpt-4o');
+        $inputTokens = (int) ($data['input_tokens'] ?? 0);
+        $outputTokens = (int) ($data['output_tokens'] ?? 0);
+        $cost = array_key_exists('cost', $data)
+            ? (float) $data['cost']
+            : $this->costCalculator->calculate($provider, $model, $inputTokens, $outputTokens, $data['pricing'] ?? null);
+
         return AiUsage::create([
-            'provider' => $data['provider'] ?? config('ai-guard.default_provider', 'openai'),
-            'model' => $data['model'] ?? config('ai-guard.default_model', 'gpt-4o'),
-            'input_tokens' => (int) ($data['input_tokens'] ?? 0),
-            'output_tokens' => (int) ($data['output_tokens'] ?? 0),
-            'cost' => (float) ($data['cost'] ?? 0),
+            'provider' => $provider,
+            'model' => $model,
+            'input_tokens' => $inputTokens,
+            'output_tokens' => $outputTokens,
+            'cost' => $cost,
             'user_id' => $data['user_id'] ?? null,
             'tenant_id' => $data['tenant_id'] ?? null,
             'tag' => $data['tag'] ?? $data['feature'] ?? null,
@@ -44,7 +52,7 @@ class GuardManager
     public function recordAndApplyBudget(array $data): AiUsage
     {
         $usage = $this->record($data);
-        $cost = (float) ($data['cost'] ?? 0);
+        $cost = $usage->cost;
         if ($cost > 0) {
             $this->budgetEnforcer->addUsage(
                 $usage->user_id,
@@ -65,7 +73,9 @@ class GuardManager
 
     /**
      * Helper to extract usage from various response objects (Laravel AI, OpenAI, etc.)
-     * and record it with calculated cost.
+     * and record it with calculated cost. Use $pricing to override cost calculation per model.
+     *
+     * @param  array{input?: float, output?: float}|null  $pricing  Optional cost per 1k tokens for this provider/model
      */
     public function recordFromResponse(
         mixed $response,
@@ -73,7 +83,8 @@ class GuardManager
         ?string $tenantId = null,
         ?string $provider = null,
         ?string $model = null,
-        ?string $tag = null
+        ?string $tag = null,
+        ?array $pricing = null
     ): AiUsage {
         $inputTokens = 0;
         $outputTokens = 0;
@@ -105,12 +116,13 @@ class GuardManager
         $provider = $provider ?? config('ai-guard.default_provider', 'openai');
         $model = $model ?? config('ai-guard.default_model', 'gpt-4o');
 
-        // Calculate Cost
+        // Calculate Cost (uses $pricing override if provided, else config/runtime pricing)
         $cost = $this->costCalculator->calculate(
             $provider,
             $model,
             (int) $inputTokens,
-            (int) $outputTokens
+            (int) $outputTokens,
+            $pricing
         );
 
         return $this->recordAndApplyBudget([
@@ -133,10 +145,17 @@ class GuardManager
         $this->budgetEnforcer->checkAll($userId, $tenantId);
     }
 
+    /**
+     * Estimate tokens and cost for a prompt. Supports multiple AI models via model/provider args
+     * and optional per-call pricing override (no config change needed).
+     *
+     * @param  array{input?: float, output?: float}|null  $pricing  Optional cost per 1k tokens; overrides config/runtime for this call
+     */
     public function estimate(
         string $prompt,
         ?string $model = null,
-        ?string $provider = null
+        ?string $provider = null,
+        ?array $pricing = null
     ): array {
         $provider = $provider ?? config('ai-guard.default_provider', 'openai');
         $model = $model ?? config('ai-guard.default_model', 'gpt-4o');
@@ -144,7 +163,7 @@ class GuardManager
         $estimation = config('ai-guard.estimation', []);
         $outputMultiplier = $estimation['default_output_multiplier'] ?? 0.5;
         $outputTokens = (int) ceil($inputTokens * $outputMultiplier);
-        $estimatedCost = $this->costCalculator->estimateCost($provider, $model, $inputTokens, $outputTokens);
+        $estimatedCost = $this->costCalculator->estimateCost($provider, $model, $inputTokens, $outputTokens, $pricing);
 
         return [
             'estimated_tokens' => $inputTokens + $outputTokens,
