@@ -1,21 +1,23 @@
-<p align="center">
-  <strong>Laravel AI Guard</strong><br>
-  <em>Your AI spending, under control.</em>
-</p>
+# Laravel AI Guard 🛡️
 
-<p align="center">
-  Track costs • Set budgets • Never get surprised by the bill
-</p>
+<strong>Track costs • Set budgets • Never get surprised by the bill. </strong><br>
 
+<p>
+   Laravel AI Guard is a powerful AI cost optimization package built for the Laravel AI SDK (12.x) 🚀.
+  It helps Laravel developers track OpenAI & LLM token usage 📊, estimate AI costs before execution ⚠️, enforce per-user or per-tenant AI budgets 🧾, and prevent unexpected AI billing spikes 💥 in production.
+</p>
+  <p>
+      Designed for Laravel SaaS applications, APIs, and AI-powered platforms, Laravel AI Guard acts as a financial firewall 🛡️ between your app and AI providers—keeping AI usage safe, predictable, and cost-efficient 💸.
+  </p>
 ---
 
 ## 📑 Quick Navigation
 
-| Jump to | Jump to |
-|---------|---------|
-| [What's Inside](#-whats-inside) | [How It Works](#-how-it-works) |
-| [Quick Start](#-quick-start-in-3-steps) | [Usage Examples](#-usage-examples) |
-| [Configuration](#️-configuration) | [Package Structure](#-package-structure) |
+| Jump to                                 | Jump to                                  |
+| --------------------------------------- | ---------------------------------------- |
+| [What's Inside](#-whats-inside)         | [How It Works](#-how-it-works)           |
+| [Quick Start](#-quick-start-in-3-steps) | [Usage Examples](#-usage-examples)       |
+| [Configuration](#️-configuration)        | [Package Structure](#-package-structure) |
 
 ---
 
@@ -55,18 +57,18 @@ flowchart TD
         B -->|No| D[❌ Block - 402]
         C --> E[Continue]
     end
-    
+
     subgraph DURING["⚡ DURING"]
         E --> F[Your app calls AI]
         F --> G[Laravel AI SDK or any API]
     end
-    
+
     subgraph AFTER["📊 AFTER"]
         G --> H[Record tokens, cost, user]
         H --> I[Save to ai_usages]
         I --> J[Update ai_budgets]
     end
-    
+
     BEFORE --> DURING --> AFTER
 ```
 
@@ -76,19 +78,19 @@ flowchart TD
 flowchart LR
     subgraph layers["Budget layers checked top to bottom"]
         direction TB
-        A["🌍 GLOBAL<br/>Whole app limit"] 
+        A["🌍 GLOBAL<br/>Whole app limit"]
         B["🏢 TENANT<br/>Org/team limit"]
         C["👤 USER<br/>Per-user limit"]
     end
-    
+
     A --> B --> C
-    
+
     C --> D{All OK?}
     D -->|Yes ✓| E[Allow request]
     D -->|Any exceeded ✗| F[Block - 402]
 ```
 
-> **TL;DR:** Laravel AI SDK does the AI. Laravel AI Guard decides *whether* you're allowed to call and *how much* you spent. They work together.
+> **TL;DR:** Laravel AI SDK does the AI. Laravel AI Guard decides _whether_ you're allowed to call and _how much_ you spent. They work together.
 
 ---
 
@@ -118,17 +120,17 @@ flowchart LR
         B[Output Tokens]
         C[Model Pricing]
     end
-    
+
     subgraph formula["Formula"]
         D["(Input ÷ 1000) × Input Price"]
         E["(Output ÷ 1000) × Output Price"]
         F["+"]
     end
-    
+
     subgraph result["Result"]
         G["Total Cost $"]
     end
-    
+
     A --> D
     B --> E
     C --> D
@@ -140,11 +142,11 @@ flowchart LR
 
 **Example:** 500 input + 200 output tokens (gpt-4o: $0.0025/1k in, $0.01/1k out)
 
-| Step | Calculation | Result |
-|------|-------------|--------|
-| Input cost | (500 ÷ 1000) × 0.0025 | $0.00125 |
-| Output cost | (200 ÷ 1000) × 0.01 | $0.00200 |
-| **Total** | | **$0.00325** |
+| Step        | Calculation           | Result       |
+| ----------- | --------------------- | ------------ |
+| Input cost  | (500 ÷ 1000) × 0.0025 | $0.00125     |
+| Output cost | (200 ÷ 1000) × 0.01   | $0.00200     |
+| **Total**   |                       | **$0.00325** |
 
 ---
 
@@ -165,10 +167,10 @@ flowchart LR
 
 ### Kill Switch
 
-| Method | How |
-|--------|-----|
+| Method                   | How                      |
+| ------------------------ | ------------------------ |
 | **`.env`** (recommended) | `AI_GUARD_DISABLED=true` |
-| **Config** | `'ai_disabled' => true` |
+| **Config**               | `'ai_disabled' => true`  |
 
 **Result:** Middleware returns `503 Service Unavailable` — no AI calls get through.
 
@@ -189,10 +191,10 @@ flowchart LR
 
 ## 📋 Requirements
 
-| Requirement | Version |
-|-------------|---------|
-| PHP | 8.1+ |
-| Laravel | 10.x, 11.x, or 12.x |
+| Requirement    | Version                         |
+| -------------- | ------------------------------- |
+| PHP            | 8.1+                            |
+| Laravel        | 10.x, 11.x, or 12.x             |
 | Laravel AI SDK | Optional (for agents/streaming) |
 
 ---
@@ -204,24 +206,26 @@ flowchart LR
     subgraph step1["Step 1"]
         A[composer require]
     end
-    
+
     subgraph step2["Step 2"]
         B[publish config<br/>& migrations]
     end
-    
+
     subgraph step3["Step 3"]
         C[migrate]
     end
-    
+
     A --> B --> C
 ```
 
 **1. Install**
+
 ```bash
 composer require subhashladumor1/laravel-ai-guard
 ```
 
 **2. Publish & migrate**
+
 ```bash
 php artisan vendor:publish --tag=ai-guard-config
 php artisan vendor:publish --tag=ai-guard-migrations
@@ -229,6 +233,7 @@ php artisan migrate
 ```
 
 **3. Optional — translations**
+
 ```bash
 php artisan vendor:publish --tag=ai-guard-lang
 ```
@@ -241,16 +246,17 @@ Creates: `ai_usages` (every call) + `ai_budgets` (limits & usage)
 
 Edit `config/ai-guard.php` after publishing:
 
-| Setting | Purpose |
-|---------|---------|
-| `ai_disabled` | Turn off all AI |
-| `pricing` | Cost per 1k tokens per model |
-| `default_model` | Fallback (e.g. `gpt-4o`) |
-| `default_provider` | Fallback (e.g. `openai`) |
-| `budgets` | Limits (global, user, tenant); period |
-| `estimation` | Chars per token, output multiplier |
+| Setting            | Purpose                               |
+| ------------------ | ------------------------------------- |
+| `ai_disabled`      | Turn off all AI                       |
+| `pricing`          | Cost per 1k tokens per model          |
+| `default_model`    | Fallback (e.g. `gpt-4o`)              |
+| `default_provider` | Fallback (e.g. `openai`)              |
+| `budgets`          | Limits (global, user, tenant); period |
+| `estimation`       | Chars per token, output multiplier    |
 
 **Example `.env`:**
+
 ```env
 AI_GUARD_DISABLED=false
 AI_GUARD_GLOBAL_LIMIT=100
@@ -319,22 +325,22 @@ AIGuard::recordAndApplyBudget([
 Route::post('/chat', ChatController::class)->middleware('ai.guard');
 ```
 
-| Condition | Response |
-|-----------|----------|
+| Condition   | Response   |
+| ----------- | ---------- |
 | Over budget | 402 + JSON |
-| AI disabled | 503 |
+| AI disabled | 503        |
 
 ---
 
 ### Artisan Commands
 
-| Command | Purpose |
-|---------|---------|
-| `php artisan ai-guard:report` | Usage & cost report |
-| `php artisan ai-guard:report --period=month` | Monthly report |
-| `php artisan ai-guard:report --days=7` | Last 7 days |
-| `php artisan ai-guard:reset-budgets` | Reset when period ends |
-| `php artisan ai-guard:reset-budgets --dry-run` | Preview only |
+| Command                                        | Purpose                |
+| ---------------------------------------------- | ---------------------- |
+| `php artisan ai-guard:report`                  | Usage & cost report    |
+| `php artisan ai-guard:report --period=month`   | Monthly report         |
+| `php artisan ai-guard:report --days=7`         | Last 7 days            |
+| `php artisan ai-guard:reset-budgets`           | Reset when period ends |
+| `php artisan ai-guard:reset-budgets --dry-run` | Preview only           |
 
 **Schedule reset:** `$schedule->command('ai-guard:reset-budgets')->daily();`
 
@@ -350,23 +356,23 @@ flowchart TB
         C1[ai-guard:report]
         C2[ai-guard:reset-budgets]
     end
-    
+
     subgraph core["Core"]
         GM[GuardManager]
     end
-    
+
     subgraph services["Services"]
         BR[BudgetResolver]
         BE[BudgetEnforcer]
         TE[TokenEstimator]
         CC[CostCalculator]
     end
-    
+
     subgraph storage["Storage"]
         AU[AiUsage]
         AB[AiBudget]
     end
-    
+
     F --> GM
     M --> GM
     C1 --> GM

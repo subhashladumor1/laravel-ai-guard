@@ -1,37 +1,63 @@
 {
-    "name": "subhashladumor1/laravel-ai-guard",
-    "description": "Laravel AI Guard - AI Cost & Budget Control for Laravel AI SDK",
-    "type": "library",
-    "license": "MIT",
-    "autoload": {
-        "psr-4": {
-            "Subhashladumor1\\LaravelAiGuard\\": "src/"
-        }
-    },
-    "authors": [
-        {
-            "name": "Subhash Ladumor"
-        }
-    ],
-    "require": {
-        "php": "^8.1",
-        "illuminate/support": "^10.0|^11.0|^12.0"
-    },
-    "require-dev": {
-        "orchestra/testbench": "^8.0",
-        "phpunit/phpunit": "^10.0"
-    },
-    "suggest": {
-        "laravel/ai": "Use with Laravel AI SDK (12.x) for agents and recordFromResponse()"
-    },
-    "extra": {
-        "laravel": {
-            "providers": [
-                "Subhashladumor1\\LaravelAiGuard\\AiGuardServiceProvider"
-            ],
-            "aliases": {
-                "AIGuard": "Subhashladumor1\\LaravelAiGuard\\Facades\\AIGuard"
-            }
-        }
+  "name": "subhashladumor1/laravel-ai-guard",
+  "description": "Laravel AI Guard 🛡️ — AI cost & budget control for Laravel AI SDK. Track token usage, control OpenAI & LLM spending, enforce AI budgets, and prevent unexpected billing spikes.",
+  "type": "library",
+  "license": "MIT",
+  "version": "1.0.0",
+  "keywords": [
+    "laravel",
+    "laravel-ai",
+    "laravel-ai-sdk",
+    "ai-cost-control",
+    "ai-budget-management",
+    "openai",
+    "llm",
+    "token-usage",
+    "ai-billing",
+    "ai-cost-optimization",
+    "laravel-saas",
+    "ai-guard",
+    "ai-monitoring",
+    "ai-budget",
+    "ai-spending-control",
+    "laravel-package",
+    "php-ai"
+  ],
+  "autoload": {
+    "psr-4": {
+      "Subhashladumor1\\LaravelAiGuard\\": "src/"
     }
+  },
+  "authors": [
+    {
+      "name": "Subhash Ladumor"
+    }
+  ],
+  "require": {
+    "php": "^8.1",
+    "illuminate/support": "^10.0|^11.0|^12.0"
+  },
+  "require-dev": {
+    "php": "^8.1|^8.2|^8.3",
+    "orchestra/testbench": "^8.0",
+    "phpunit/phpunit": "^9.0|^10.0|^11.0|^12.0",
+    "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
+    "illuminate/http": "^9.0|^10.0|^11.0|^12.0",
+    "illuminate/cache": "^9.0|^10.0|^11.0|^12.0",
+    "illuminate/session": "^9.0|^10.0|^11.0|^12.0",
+    "illuminate/database": "^9.0|^10.0|^11.0|^12.0"
+  },
+  "suggest": {
+    "laravel/ai": "🤖 Use with Laravel AI SDK (12.x) to track token usage, estimate AI cost, and enforce budgets automatically."
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Subhashladumor1\\LaravelAiGuard\\AiGuardServiceProvider"
+      ],
+      "aliases": {
+        "AIGuard": "Subhashladumor1\\LaravelAiGuard\\Facades\\AIGuard"
+      }
+    }
+  }
 }
