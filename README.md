@@ -115,29 +115,31 @@ AI APIs charge **by the token**. One heavy user, one bug—and your bill spikes.
 
 ```mermaid
 flowchart LR
-    subgraph inputs["Inputs"]
+    subgraph inputs["Usage Inputs"]
         A[Input Tokens]
         B[Output Tokens]
-        C[Model Pricing]
+        C[Cache Hits/Writes]
+        D[Images/Audio/Video]
     end
 
-    subgraph formula["Formula"]
-        D["(Input ÷ 1000) × Input Price"]
-        E["(Output ÷ 1000) × Output Price"]
-        F["+"]
+    subgraph calculation["Calculation"]
+        E["Text Cost<br/>(Standard + Long Context)"]
+        F["Cache Cost<br/>(Read + Write)"]
+        G["Multimodal Cost<br/>(Pixel/Second/Token)"]
     end
 
-    subgraph result["Result"]
-        G["Total Cost $"]
+    subgraph result["Total"]
+        H["Total Cost $"]
     end
 
-    A --> D
+    A --> E
     B --> E
-    C --> D
-    C --> E
-    D --> F
-    E --> F
-    F --> G
+    C --> F
+    D --> G
+
+    E --> H
+    F --> H
+    G --> H
 ```
 
 **Example:** 500 input + 200 output tokens (gpt-4o: $0.0025/1k in, $0.01/1k out)
@@ -148,6 +150,84 @@ flowchart LR
 | Output cost | (200 ÷ 1000) × 0.01   | $0.00200     |
 | **Total**   |                       | **$0.00325** |
 
+---
+
+### Cost Optimization (Context Caching) ⚡
+
+Laravel AI Guard supports advanced pricing models including **Context Caching** (Anthropic, Gemini, OpenAI) to help you track savings accuracy.
+
+**Supported Pricing Dimensions:**
+- **Input Tokens** (Standard)
+- **Output Tokens** (Standard)
+- **Cached Input Tokens** (Read from cache — typically ~50-90% cheaper)
+- **Cache Creation Tokens** (Write to cache — sometimes higher cost)
+- **Long context** (e.g. >200k tokens — premium `input_long` / `output_long` rates)
+- **Modality-specific:** image tokens, audio tokens, **per image**, **per second video**, **per minute transcription**, **TTS per 1M characters**, **web search per 1k calls**, **embeddings per 1k tokens**
+
+**Configuration Example (`config/ai-guard.php`):**
+
+```php
+'claude-3-5-sonnet' => [
+    'input' => 0.003,
+    'output' => 0.015,
+    'cache_write' => 0.00375, // +25% overhead
+    'cached_input' => 0.0003, // -90% savings
+],
+```
+
+The package automatically detects cache usage from provider responses and applies the correct lower rate.
+
+---
+
+### Supported Providers, Models & Cost Coverage 📐
+
+Pricing is aligned with **official 2026 API docs** for **maximum accurate cost calculation** across **Chat**, **Assistants**, **Agents**, and modality-specific use cases.
+
+| Provider | Pricing Source | Coverage |
+| :--- | :--- | :--- |
+| **OpenAI** | [Pricing](https://developers.openai.com/api/docs/pricing) | GPT-5.x, GPT-4o, o1, Realtime (Audio/Text), DALL·E 3, Whisper, TTS, Web Search |
+| **Google Gemini** | [Pricing](https://ai.google.dev/gemini-api/docs/pricing) | Gemini 3 Pro/Flash, 2.5 Pro/Flash, 1.5, Imagen 3, Veo (Video), Embeddings |
+| **Anthropic** | [Pricing](https://platform.claude.com/docs/en/about-claude/pricing) | Claude 4.5, 3.5 Sonnet, 3 Opus, Haiku, Prompt Caching, Long Context |
+| **xAI Grok** | [Models](https://docs.x.ai/developers/models) | Grok 4, Grok 3, Grok Beta, Web Search Tool |
+| **Mistral AI** | [Pricing](https://mistral.ai/pricing#api) | Mistral Large 2, Small, Codestral, Embeddings |
+| **DeepSeek** | [Pricing](https://api-docs.deepseek.com/quick_start/pricing) | DeepSeek-V3, R1 (Reasoner), Cache Hit/Miss pricing |
+
+**Full Multimodal Cost Support:**
+
+- **LLM / Chat:** Input, Output, Cached Input, Cache Write, Long-Context pricing
+- **Agents:** Web Search (per 1k calls), Code Interpreter (Session based)
+- **Audio:**
+  - **Input:** Audio tokens (e.g. Gemini 2.5 Flash `audio_in`, GPT-4o `audio_in`)
+  - **Output:** Audio tokens (e.g. GPT-4o `audio_out`)
+  - **Transcription:** Per minute (Whisper)
+  - **TTS:** Per 1M characters (OpenAI TTS)
+- **Video:**
+  - **Input:** Video tokens (e.g. Gemini `video_in`)
+  - **Generation:** Per second (Veo `per_second_video`)
+- **Image:**
+  - **Input:** Image tokens (e.g. GPT-4o `image_in`)
+  - **Generation:** Per image (DALL·E 3, Imagen)
+- **Embeddings:** Per 1k tokens
+
+Pass extended `usage` when recording to get accurate totals:
+
+```php
+AIGuard::recordAndApplyBudget([
+    'provider' => 'gemini',
+    'model' => 'gemini-2.5-flash',
+    'input_tokens' => 1000,
+    'output_tokens' => 200,
+    'usage' => [
+        'input_tokens' => 1000,           // Text tokens
+        'output_tokens' => 200,           // Text output
+        'video_tokens_in' => 5000,        // Video understanding tokens
+        'audio_tokens_in' => 2000,        // Audio input tokens
+        'images_generated' => 1,          // Image gen quantity
+        'web_search_calls' => 2,          // Per-call tool usage
+    ],
+    'user_id' => auth()->id(),
+]);
+```
 ---
 
 ### Estimation (No API Call = No Cost)
@@ -238,7 +318,7 @@ php artisan migrate
 php artisan vendor:publish --tag=ai-guard-lang
 ```
 
-Creates: `ai_usages` (every call) + `ai_budgets` (limits & usage)
+creates: `ai_usages` (tracks every request & cost) + `ai_budgets` (stores current usage vs limit)
 
 ---
 
@@ -321,6 +401,30 @@ AIGuard::recordAndApplyBudget([
     'user_id' => auth()->id(),
     'tenant_id' => $tenantId,
     'tag' => 'chat',
+]);
+```
+
+**Extended usage (audio, video, image, tools)** — pass a `usage` array for accurate cost when using modalities or tools:
+
+```php
+AIGuard::recordAndApplyBudget([
+    'provider' => 'openai',
+    'model' => 'gpt-4o',
+    'input_tokens' => 500,
+    'output_tokens' => 300,
+    'usage' => [
+        'input_tokens' => 500,
+        'output_tokens' => 300,
+        'cached_input_tokens' => 0,
+        'images_generated' => 2,           // DALL·E / image models
+        'web_search_calls' => 5,           // agent tool calls
+        'transcription_minutes' => 1.5,    // Whisper / transcribe
+        'tts_characters' => 2500,         // TTS
+        'embedding_tokens' => 1000,        // embeddings
+        'video_seconds' => 10,             // Veo / video gen
+    ],
+    'user_id' => auth()->id(),
+    'tag' => 'agent-with-search',
 ]);
 ```
 
@@ -493,6 +597,147 @@ laravel-ai-guard/
 ├── database/migrations/
 ├── lang/                         # 11 locales
 └── tests/
+```
+
+---
+
+---
+
+## 🌍 Real-World Scenarios
+
+### 1. The "Safe" Chatbot 🤖 (OpenAI + Laravel AI SDK)
+**Goal:** Build a chatbot that users can't abuse to run up a huge bill.
+**Safety Check:** Estimate cost *before* the request.
+
+```php
+use Subhashladumor1\LaravelAiGuard\Facades\AIGuard;
+use Illuminate\Http\Request;
+
+public function chat(Request $request) 
+{
+    $user = auth()->user();
+    $prompt = $request->input('message');
+
+    // 1️⃣ Run budget check (throws overflow exception if user is over limit)
+    AIGuard::checkAllBudgets($user->id, $user->team_id);
+
+    // 2️⃣ Estimate cost (OpenAI/Text is roughly 4 chars/token)
+    // If the prompt is huge (e.g. paste-bin attack), stop it here.
+    $estimatedCost = AIGuard::estimate($prompt, 'gpt-4o', 'openai');
+    
+    if ($estimatedCost > 0.50) {
+        return response()->json(['error' => 'Message too long/expensive.'], 400);
+    }
+    
+    // 3️⃣ Call AI (Laravel AI SDK simple example)
+    $response = \AI::chat($prompt);
+
+    // 4️⃣ Record actual usage
+    // Tracks input, output, and updates User + Tenant budgets
+    AIGuard::recordFromResponse($response, $user->id, $user->team_id, 'openai', 'gpt-4o', 'chatbot');
+    
+    return response()->json(['reply' => $response]);
+}
+```
+
+### 2. Video Analysis Agent 🎥 (Gemini 2.5) — Multimodal
+**Goal:** Analyze uploaded videos. Video processing is expensive per second.
+**Method:** Use specific keys for `video_seconds` or `video_tokens`.
+
+```php
+// User uploads a 30-second video clip
+$videoPath = $request->file('video')->store('videos');
+
+// Call Gemini API (Direct HTTP / Google Client - No Laravel SDK)
+$geminiResponse = Http::post('https://generativelanguage.googleapis.com/...', [
+    // ... payload with video data ...
+]);
+
+$result = $geminiResponse->json();
+
+// 💡 Record complex usage:
+AIGuard::recordAndApplyBudget([
+    'provider' => 'gemini',
+    'model' => 'gemini-2.5-flash',
+    'input_tokens' => 500,        // Prompt text
+    'output_tokens' => 200,       // Analysis text
+    'usage' => [
+        'input_tokens' => 500,
+        'video_tokens_in' => 7500, // Video tokens (approx 250/sec)
+        // OR use direct billing unit if supported: 'video_seconds' => 30
+    ],
+    'user_id' => auth()->id(),
+    'tag' => 'video-analysis'
+]);
+```
+
+### 3. Long Document Summarizer 📄 (Claude 3.5 Sonnet + Caching)
+**Goal:** Summarize a 100-page PDF. Reuse the PDF context for follow-up questions to save 90% cost.
+**Method:** Track `cached_input_tokens`.
+
+```php
+// 1st Call: Upload & Cache
+// Anthropic returns 'cache_creation_input_tokens' (write cost)
+AIGuard::recordAndApplyBudget([
+    'provider' => 'anthropic',
+    'model' => 'claude-3-5-sonnet',
+    'input_tokens' => 50000,
+    'usage' => [
+        'input_tokens' => 50000,
+        'cache_write_tokens' => 50000, // Expensive write
+    ],
+    'user_id' => auth()->id(),
+]);
+
+// 2nd Call: Ask question about PDF
+// Anthropic returns 'cache_read_input_tokens' (Cheap read! ~10% cost)
+AIGuard::recordAndApplyBudget([
+    'provider' => 'anthropic',
+    'model' => 'claude-3-5-sonnet',
+    'input_tokens' => 50100, // 50k context + 100 new prompt
+    'usage' => [
+        'input_tokens' => 50100,
+        'cached_input_tokens' => 50000, // Cheap HIT!
+        'output_tokens' => 500,
+    ],
+    // AIGuard automatically calculates the lower bill for cached tokens
+    'user_id' => auth()->id(),
+]);
+```
+
+### 4. Background Data Processing ⚙️ (DeepSeek / Mistral + Batch)
+**Goal:** Process 10,000 rows of data nightly.
+**Optimisation:** Use a cheaper model (DeepSeek V3 / Mistral Small).
+
+```php
+foreach ($rows as $row) {
+    // Check global budget first to prevent runaway loops
+    try {
+        AIGuard::checkAllBudgets(null, $tenant->id); 
+    } catch (\Exception $e) {
+        Log::alert("Budget exceeded during batch! Stopping.");
+        break;
+    }
+
+    // Call DeepSeek API directly
+    $response = Http::withToken($key)->post('https://api.deepseek.com/chat/completions', [
+        'model' => 'deepseek-chat',
+        'messages' => [['role' => 'user', 'content' => "Analyze: " . $row->text]]
+    ]);
+
+    // Track it
+    AIGuard::recordAndApplyBudget([
+        'provider' => 'deepseek',
+        'model' => 'deepseek-chat', 
+        'input_tokens' => $response['usage']['prompt_tokens'],
+        'output_tokens' => $response['usage']['completion_tokens'],
+        'usage' => [
+            'cached_input_tokens' => $response['usage']['prompt_cache_hit_tokens'] ?? 0, 
+        ],
+        'tenant_id' => $tenant->id,
+        'tag' => 'nightly-batch'
+    ]);
+}
 ```
 
 ---

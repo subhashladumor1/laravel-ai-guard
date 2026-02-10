@@ -32,9 +32,10 @@ class GuardManager
         $model = $data['model'] ?? config('ai-guard.default_model', 'gpt-4o');
         $inputTokens = (int) ($data['input_tokens'] ?? 0);
         $outputTokens = (int) ($data['output_tokens'] ?? 0);
+
         $cost = array_key_exists('cost', $data)
             ? (float) $data['cost']
-            : $this->costCalculator->calculate($provider, $model, $inputTokens, $outputTokens, $data['pricing'] ?? null);
+            : $this->computeCost($provider, $model, $data, $inputTokens, $outputTokens);
 
         return AiUsage::create([
             'provider' => $provider,
@@ -47,6 +48,24 @@ class GuardManager
             'tag' => $data['tag'] ?? $data['feature'] ?? null,
             'meta' => $data['meta'] ?? null,
         ]);
+    }
+
+    /**
+     * Compute cost from data: uses extended usage when present (audio, video, image, tools, etc.), else standard tokens.
+     */
+    protected function computeCost(string $provider, string $model, array $data, int $inputTokens, int $outputTokens): float
+    {
+        $usage = $data['usage'] ?? null;
+        if (is_array($usage)) {
+            $usage['input_tokens'] = $usage['input_tokens'] ?? $inputTokens;
+            $usage['output_tokens'] = $usage['output_tokens'] ?? $outputTokens;
+            $usage['cached_input_tokens'] = $usage['cached_input_tokens'] ?? $data['cached_input_tokens'] ?? 0;
+            $usage['cache_write_tokens'] = $usage['cache_write_tokens'] ?? $data['cache_write_tokens'] ?? 0;
+            return $this->costCalculator->calculateWithUsage($provider, $model, $usage, $data['pricing'] ?? null);
+        }
+        $cached = (int) ($data['cached_input_tokens'] ?? 0);
+        $cacheWrite = (int) ($data['cache_write_tokens'] ?? 0);
+        return $this->costCalculator->calculate($provider, $model, $inputTokens, $outputTokens, $data['pricing'] ?? null, $cached, $cacheWrite);
     }
 
     public function recordAndApplyBudget(array $data): AiUsage
@@ -103,13 +122,61 @@ class GuardManager
         }
 
         if ($usage) {
-            if (is_object($usage)) {
-                $inputTokens = $usage->promptTokens ?? $usage->prompt_tokens ?? $usage->input_tokens ?? 0;
-                $outputTokens = $usage->completionTokens ?? $usage->completion_tokens ?? $usage->output_tokens ?? 0;
-            } elseif (is_array($usage)) {
-                $inputTokens = $usage['promptTokens'] ?? $usage['prompt_tokens'] ?? $usage['input_tokens'] ?? 0;
-                $outputTokens = $usage['completionTokens'] ?? $usage['completion_tokens'] ?? $usage['output_tokens'] ?? 0;
+            // Normalize usage to array
+            $usageArray = is_object($usage) ? (array) $usage : $usage;
+
+            // Extract basic tokens
+            $totalInput = (int) ($usageArray['promptTokens']
+                ?? $usageArray['prompt_tokens']
+                ?? $usageArray['input_tokens']
+                ?? $usageArray['promptTokenCount'] // Gemini
+                ?? 0);
+
+            $outputTokens = (int) ($usageArray['completionTokens']
+                ?? $usageArray['completion_tokens']
+                ?? $usageArray['output_tokens']
+                ?? $usageArray['candidatesTokenCount'] // Gemini
+                ?? 0);
+
+            // Extract Cache Details
+            $cachedInputTokens = 0;
+            $cacheWriteTokens = 0;
+
+            // OpenAI: prompt_tokens_details.cached_tokens
+            if (isset($usageArray['prompt_tokens_details']['cached_tokens'])) {
+                $cachedInputTokens = (int) $usageArray['prompt_tokens_details']['cached_tokens'];
             }
+            // Also check object property access for OpenAI SDK objects
+            elseif (isset($usageArray['prompt_tokens_details']) && is_object($usageArray['prompt_tokens_details'])) {
+                if (isset($usageArray['prompt_tokens_details']->cached_tokens)) {
+                    $cachedInputTokens = (int) $usageArray['prompt_tokens_details']->cached_tokens;
+                }
+            }
+
+            // Anthropic: cache_creation_input_tokens, cache_read_input_tokens
+            if (isset($usageArray['cache_creation_input_tokens'])) {
+                $cacheWriteTokens = (int) $usageArray['cache_creation_input_tokens'];
+            }
+            if (isset($usageArray['cache_read_input_tokens'])) {
+                $cachedInputTokens = (int) $usageArray['cache_read_input_tokens'];
+            }
+
+            // Gemini: cachedContentTokenCount (found in usageMetadata usually, but we might have usageMetadata flattened or passed differently)
+            // If the response is raw Gemini response, usageMetadata is at root, but here we assume $usage is the usage block.
+            // In Gemini PHP SDK/REST, usageMetadata contains promptTokenCount etc.
+            if (isset($usageArray['cachedContentTokenCount'])) {
+                $cachedInputTokens = (int) $usageArray['cachedContentTokenCount'];
+            }
+
+            // Calculate Standard Input (Non-Cached)
+            // Standard = Total - Cached - Write (if Write is included in Total)
+            // Note: For Anthropic, input_tokens includes creation and read.
+            // For OpenAI, prompt_tokens includes cached.
+            // For Gemini, promptTokenCount includes cached.
+            $standardInputTokens = max(0, $totalInput - $cachedInputTokens - $cacheWriteTokens);
+
+            // Re-assign for recording (we record total input usually, but cost needs breakdown)
+            $inputTokens = $totalInput;
         }
 
         // Apply defaults
@@ -120,9 +187,11 @@ class GuardManager
         $cost = $this->costCalculator->calculate(
             $provider,
             $model,
-            (int) $inputTokens,
+            (int) ($standardInputTokens ?? $inputTokens), // Pass Standard Input (cache miss)
             (int) $outputTokens,
-            $pricing
+            $pricing,
+            (int) $cachedInputTokens,
+            (int) $cacheWriteTokens
         );
 
         return $this->recordAndApplyBudget([
@@ -134,6 +203,10 @@ class GuardManager
             'user_id' => $userId,
             'tenant_id' => $tenantId,
             'tag' => $tag,
+            'meta' => [
+                'cached_input_tokens' => $cachedInputTokens > 0 ? $cachedInputTokens : null,
+                'cache_write_tokens' => $cacheWriteTokens > 0 ? $cacheWriteTokens : null,
+            ],
         ]);
     }
 
