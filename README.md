@@ -758,6 +758,8 @@ App locale used automatically. Customize: `php artisan vendor:publish --tag=ai-g
 
 ---
 
+🚧 Beta Notice: Laravel AI Guard is currently in beta. Please report any issues with cost calculation, token estimation, or edge cases by opening a GitHub issue. Community feedback is highly appreciated.
+
 ## 🧪 Testing
 
 ```bash
